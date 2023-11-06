@@ -1,0 +1,18 @@
+[package]
+name = "cohost_steamugc_bot"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0.75"
+dotenv = "0.15.0"
+eggbug = "0.2.0"
+html-escape = "0.2.13"
+image = "0.24.7"
+rand = "0.8.5"
+reqwest = "0.11.22"
+tokio = { version = "1.33.0", features = ["macros", "rt-multi-thread"] }
+tracing-subscriber = { version = "0.3.17", features = ["env-filter"] }
+url = "2.4.1"

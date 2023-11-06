@@ -1,10 +1,8 @@
-# Cohost Random Workshop Item Bot (WIP)
+# Cohost Random Workshop Item Bot
 
-Will remain messy for a little while.
+Posts random workshop items to [Cohost](https://cohost.org/l4d2workshop) using [reqwest](https://github.com/seanmonstar/reqwest) and [eggbug-rs](https://github.com/iliana/eggbug-rs).
 
-Uses reqwest and eggbug-rs to scrape steam workshop and post it to cohost.
-
-Requires you to create a .env file with the following fields filled in
+Requires .env file with the following fields filled in
 ```
 COHOST_EMAIL=your_email
 COHOST_PASSWORD=your_password

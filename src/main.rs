@@ -12,7 +12,7 @@ use html_escape::decode_html_entities;
 #[tokio::main]
 async fn main() -> Result<()> {
 	dotenv::dotenv().ok();
-	fmt().with_env_filter(EnvFilter::from_default_env() ).init();
+	fmt().with_env_filter ( EnvFilter::from_default_env() ).init();
 
 	let workshop_url_start = r"https://steamcommunity.com/workshop/browse/?appid=";
 	let app_id = std::env::var( "APP_ID" )?;
@@ -53,44 +53,28 @@ async fn main() -> Result<()> {
 		.text()
 		.await?;
 
-
 	// Code order matches steam's html order; we only increase start_index. Could be made more flexible later, but it works.
 
 	// Find nth item's parent <div> by class
 	let search_start_item = "class=\"workshopItem\">";
-	let mut start_index = page.nth_index_of ( search_start_item, 0, random_item_index );
-
-	// Find target item's workshop url
-	let search_start_url = "https";
-	let search_end_item = "&";
-	// Find next url, which will be in an <a href>
-	start_index = page.index_of ( search_start_url, start_index.unwrap() );
-	// End url before &, discarding unnecessary query string
-	let mut end_index = page.index_of ( search_end_item, start_index.unwrap() );
-	let item_url = &page [ start_index.unwrap() .. end_index.unwrap() ];
-	println!( "{item_url}" );
+	let start_index = page.nth_index_of ( 0, search_start_item, random_item_index );
 	
-	// Find target item's preview image url
-	let search_start_image = "workshopItemPreviewImage";
-	let search_end_image = "?";
-	// Find url by class, which will be in an <img>
-	start_index = page.index_of ( search_start_image, end_index.unwrap() );
-	start_index = page.index_of ( search_start_url, start_index.unwrap() );
+	// Find target item's workshop url
+	// Find next url, which will be in an <a href>
 	// End url before &, discarding unnecessary query string
-	end_index = page.index_of ( search_end_image, start_index.unwrap() );
-	let image_url = &page[start_index.unwrap() .. end_index.unwrap() ];
-	println!( "{image_url}" );
+	let item_url = page.substring_find(start_index.unwrap(), &vec!["https"], EndPos::Start, &vec!["&"], EndPos::Start);
+	println!( "{}", item_url.unwrap() );
+
+	// Find target item's preview image url
+	// Find url by class, which will be in an <img>
+	// End url before &, discarding unnecessary query string
+	let image_url = page.substring_find(start_index.unwrap(), &vec!["workshopItemPreviewImage", "https"], EndPos::Start, &vec!["?"], EndPos::Start);
+	println!( "{}", image_url.unwrap() );
 
 	// Find target item's title
-	let search_start_title = "<div class=\"workshopItemTitle ellipsis\">";
-	let search_end_title = "</div>";
 	// The only good signpost for the title is the div, so we find it, and offset the start index to after the div string
-	start_index = page.index_of ( search_start_title, end_index.unwrap() );
-	let start_index_modified = start_index.unwrap() + search_start_title.len();
-	end_index = page.index_of ( search_end_title, start_index_modified );
-	let title = &page [ start_index_modified .. end_index.unwrap() ];
-	let title_decoded = decode_html_entities ( title ) ;
-	println!( "{title_decoded}" );
+	let title_decoded = decode_html_entities ( page.substring_find(start_index.unwrap(), &vec!["<div class=\"workshopItemTitle ellipsis\">"], EndPos::End, &vec!("</div>"), EndPos::Start).unwrap() );
+	println!( "{}", title_decoded );
 
 	let image_file_str: String = thread_rng ()
 		.sample_iter ( &Alphanumeric )
@@ -99,7 +83,7 @@ async fn main() -> Result<()> {
 		.collect ();
 
 	let image_file_name = image_file_str + ".png";
-	match download_from_url ( image_url, &image_file_name ).await
+	match download_from_url ( image_url.unwrap(), &image_file_name ).await
 	{
 		Ok(()) => println! ( "{image_file_name} downloaded" ),
 		Err(e) => println! ( "error downloading {image_file_name}: {e}" ),
@@ -128,11 +112,11 @@ async fn main() -> Result<()> {
 		],
 		tags: vec! [ "🤖".to_string(), "bot".to_string(), "The Cohost Bot Feed".to_string(), "Steam Workshop Bot".to_string() ],
 		draft: false,
-		 ..  Default::default()
+		 .. Default::default()
 	};
 	let id = session.create_post( &project, &mut post ).await?;
 
-	post.markdown = "[".to_string() + &title_decoded + "]( " + item_url + " )";
+	post.markdown = "[".to_string() + &title_decoded + "]( " + item_url.unwrap() + " )";
 	session.edit_post ( &project, id, &mut post ).await?;
 	
 	match std::fs::remove_file ( &image_file_name )
@@ -144,15 +128,19 @@ async fn main() -> Result<()> {
 	Ok(())
 }
 
-trait IndexOf
+enum EndPos { Start, End, }
+
+trait StringSearch
 {
-	fn index_of ( &self, find: &str, start_index: usize ) -> Option < usize >;
-	fn nth_index_of ( &self, find: &str, start_index: usize, instance: usize ) -> Option < usize >;
+	fn index_of ( &self, start_index: usize, find: &str ) -> Option <usize>;
+	fn nth_index_of ( &self, start_index: usize, find: &str, instance: usize ) -> Option <usize>;
+	fn index_of_multi ( &self, start_index: usize, find: &Vec<&str>, result_pos: EndPos ) -> Option <usize>;
+	fn substring_find ( &self, start_index: usize, start: &Vec<&str>, result_pos_start: EndPos, end: &Vec<&str>, result_pos_end: EndPos ) -> Option <&str>;
 }
 
-impl IndexOf for str
+impl StringSearch for str
 {
-	fn index_of ( &self, find: &str, start_index: usize ) -> Option< usize >
+	fn index_of ( &self, start_index: usize, find: &str ) -> Option < usize>
 	{
 		if start_index >= self.len()
 		{
@@ -165,8 +153,36 @@ impl IndexOf for str
 			None => None,
 		}
 	}
+	fn index_of_multi( &self, mut start_index: usize, find: &Vec<&str>, result_pos: EndPos ) -> Option <usize>
+	{
+		if start_index >= self.len()
+		{
+			return None;
+		}
+
+		let mut test: Option <usize> = None;
+		for &item in find
+		{
+			let substring = &self [ start_index .. ];
+			test = match substring.find ( item )
+			{
+				Some ( index ) =>
+				{
+					start_index += index;
+					if matches!( result_pos, EndPos::End )
+					{
+						start_index += item.len();
+					}
+					Some ( start_index )
+				},
+				None => return None,
+			};
+			//println!("{:?}", test);
+		}
+		test
+	}
 	// Instance is 1-indexed.
-	fn nth_index_of ( &self, find: &str, start_index: usize, instance: usize ) -> Option < usize >
+	fn nth_index_of ( &self, start_index: usize, find: &str, instance: usize ) -> Option <usize>
 	{
 		if start_index >= self.len()
 		{
@@ -187,14 +203,28 @@ impl IndexOf for str
 			}
 		}
 		Some ( total_index - find.len() )
-	}	
+	}
+	fn substring_find ( &self, start_index: usize, start_find: &Vec<&str>, result_pos_start: EndPos, end_find: &Vec<&str>, result_pos_end: EndPos ) -> Option <&str>
+	{
+		let start = match self.index_of_multi(start_index, start_find, result_pos_start)
+		{
+			Some (usize) => Some (usize),
+			None => return None,
+		};
+		let end = match self.index_of_multi ( start.unwrap(), end_find, result_pos_end )
+		{
+			Some (usize) => Some (usize),
+			None => return None,
+		};
+		Some ( &self [ start.unwrap() .. end.unwrap() ] )
+	}
 }
-async fn download_from_url(url: &str, file_name: &str) -> Result<()>
+async fn download_from_url( url: &str, file_name: &str ) -> Result<()>
 {
 	// Credit to Thorsten Hans at https://www.thorsten-hans.com/weekly-rust-trivia-download-an-image-to-a-file/
 	let response = reqwest::get ( url ).await?;
 	let mut file = File::create ( file_name )?;
-	let mut content =  Cursor::new ( response.bytes().await? );
+	let mut content = Cursor::new ( response.bytes().await? );
 	copy ( &mut content, &mut file )?;
 	Ok(())
 }

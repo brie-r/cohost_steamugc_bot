@@ -7,7 +7,7 @@ use tracing_subscriber::{fmt, EnvFilter};
 use rand::{Rng, thread_rng, distributions::Alphanumeric};
 use std::{path::Path, fs::File, io::{copy, Cursor}};
 use html_escape::decode_html_entities;
-//use string_search::{StringSearch, Include};
+use string_search::{StringSearch, Include};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -57,23 +57,23 @@ async fn main() -> Result<()> {
 
 	// Find nth item's parent <div> by class
 	let search_start_item = "class=\"workshopItem\">";
-	let start_index = page.nth_index_of ( 0, search_start_item, random_item_index );
+	let start_index = page.index_of_nth ( 0, search_start_item, random_item_index );
 	
 	// Find target item's workshop url
 	// Find next url, which will be in an <a href>
 	// End url before &, discarding unnecessary query string
-	let item_url = page.substring_find(start_index.unwrap(), &vec!["https"], EndPos::Start, &vec!["&"], EndPos::Start);
+	let item_url = page.str_search(start_index.unwrap(), &vec!["https"], Include::Start, &vec!["&"], Include::Start);
 	println!( "{}", item_url.unwrap() );
 
 	// Find target item's preview image url
 	// Find url by class, which will be in an <img>
 	// End url before &, discarding unnecessary query string
-	let image_url = page.substring_find(start_index.unwrap(), &vec!["workshopItemPreviewImage", "https"], EndPos::Start, &vec!["?"], EndPos::Start);
+	let image_url = page.str_search(start_index.unwrap(), &vec!["workshopItemPreviewImage", "https"], Include::Start, &vec!["?"], Include::Start);
 	println!( "{}", image_url.unwrap() );
 
 	// Find target item's title
 	// The only good signpost for the title is the div, so we find it, and offset the start index to after the div string
-	let title_decoded = decode_html_entities ( page.substring_find(start_index.unwrap(), &vec!["<div class=\"workshopItemTitle ellipsis\">"], EndPos::End, &vec!("</div>"), EndPos::Start).unwrap() );
+	let title_decoded = decode_html_entities ( page.str_search(start_index.unwrap(), &vec!["<div class=\"workshopItemTitle ellipsis\">"], Include::End, &vec!("</div>"), Include::Start).unwrap() );
 	println!( "{}", title_decoded );
 
 	let image_file_str: String = thread_rng ()
@@ -128,97 +128,6 @@ async fn main() -> Result<()> {
 	Ok(())
 }
 
-enum EndPos { Start, End, }
-
-trait StringSearch
-{
-	fn index_of ( &self, start_index: usize, find: &str ) -> Option <usize>;
-	fn nth_index_of ( &self, start_index: usize, find: &str, instance: usize ) -> Option <usize>;
-	fn index_of_multi ( &self, start_index: usize, find: &Vec<&str>, result_pos: EndPos ) -> Option <usize>;
-	fn substring_find ( &self, start_index: usize, start: &Vec<&str>, result_pos_start: EndPos, end: &Vec<&str>, result_pos_end: EndPos ) -> Option <&str>;
-}
-
-impl StringSearch for str
-{
-	fn index_of ( &self, start_index: usize, find: &str ) -> Option < usize>
-	{
-		if start_index >= self.len()
-		{
-			return None;
-		}
-		let substring = &self [ start_index .. ];
-		match substring.find (find)
-		{
-			Some ( index ) => Some ( start_index + index ),
-			None => None,
-		}
-	}
-	fn index_of_multi( &self, mut start_index: usize, find: &Vec<&str>, result_pos: EndPos ) -> Option <usize>
-	{
-		if start_index >= self.len()
-		{
-			return None;
-		}
-
-		let mut test: Option <usize> = None;
-		for &item in find
-		{
-			let substring = &self [ start_index .. ];
-			test = match substring.find ( item )
-			{
-				Some ( index ) =>
-				{
-					start_index += index;
-					if matches!( result_pos, EndPos::End )
-					{
-						start_index += item.len();
-					}
-					Some ( start_index )
-				},
-				None => return None,
-			};
-			//println!("{:?}", test);
-		}
-		test
-	}
-	// Instance is 1-indexed.
-	fn nth_index_of ( &self, start_index: usize, find: &str, instance: usize ) -> Option <usize>
-	{
-		if start_index >= self.len()
-		{
-			return None;
-		}
-		let mut substring = &self [ start_index .. ];
-		let mut total_index = start_index;
-		for _ in 0 .. instance
-		{
-			if let Some ( index ) = substring.find ( find )
-			{
-				total_index += index + find.len();
-				substring = &self [ total_index .. ];
-			}
-			else
-			{
-				return None;
-			}
-		}
-		Some ( total_index - find.len() )
-	}
-	fn substring_find ( &self, start_index: usize, start_find: &Vec<&str>, result_pos_start: EndPos, end_find: &Vec<&str>, result_pos_end: EndPos ) -> Option <&str>
-	{
-		let start = match self.index_of_multi(start_index, start_find, result_pos_start)
-		{
-			Some (usize) => Some (usize),
-			None => return None,
-		};
-		let end = match self.index_of_multi ( start.unwrap(), end_find, result_pos_end )
-		{
-			Some (usize) => Some (usize),
-			None => return None,
-		};
-		Some ( &self [ start.unwrap() .. end.unwrap() ] )
-	}
-}
 async fn download_from_url( url: &str, file_name: &str ) -> Result<()>
 {
 	// Credit to Thorsten Hans at https://www.thorsten-hans.com/weekly-rust-trivia-download-an-image-to-a-file/

@@ -10,7 +10,7 @@ COHOST_PROJECT=page_name_to_post_to (omit the @)
 APP_ID=number (steam app ID, eg 440 for TF2)
 ```
 Note that
-1. Name in Cargo.toml must match folder name.
+1. Name in Cargo.toml must match folder name. Caused by CARGO_MANIFEST_DIR env var. If anyone feels like fixing this, please submit a PR.
 1. Limited to the top or most recent 50,000 items.
 2. Games with less than 50,000 workshop items are unsupported. I'll happily take PRs that address this.
 3. Reliant on scraping, so if Valve changes the workshop html, it might break.

@@ -1,7 +1,7 @@
 ﻿#![deny(elided_lifetimes_in_paths) ]
 #![warn(clippy::pedantic) ]
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 use eggbug::{Attachment, Client, Post};
 use tracing_subscriber::{fmt, EnvFilter};
 use rand::{Rng, thread_rng, distributions::Alphanumeric};
@@ -10,7 +10,7 @@ use html_escape::decode_html_entities;
 use string_search::{StringSearch, Include};
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> Result<(), anyhow::Error> {
 	dotenv::dotenv().ok();
 	fmt().with_env_filter ( EnvFilter::from_default_env() ).init();
 
@@ -53,27 +53,46 @@ async fn main() -> Result<()> {
 		.text()
 		.await?;
 
+	let item_range = 0 .. page.len();
 	// Code order matches steam's html order; we only increase start_index. Could be made more flexible later, but it works.
 
 	// Find nth item's parent <div> by class
-	let search_start_item = "class=\"workshopItem\">";
-	let start_index = page.index_of_nth ( 0, search_start_item, random_item_index );
-	
+	let search_range = match page.index_of_nth ( &item_range, "class=\"workshopItem\">", random_item_index )
+	{
+		Some ( range ) => range.end .. page.len(),
+		None => bail!("{random_item_index}th item on {random_page_index}th page not found"),
+	};
+		
 	// Find target item's workshop url
 	// Find next url, which will be in an <a href>
 	// End url before &, discarding unnecessary query string
-	let item_url = page.str_search(start_index.unwrap(), &vec!["https"], Include::Start, &vec!["&"], Include::Start);
-	println!( "{}", item_url.unwrap() );
+	let item_url = match page.str_search( &search_range, &vec!["https"], Include::Include, &vec!["&"], Include::Exclude)
+	{
+		Some ( found ) => found.output,
+		None => bail!("Item URL not found"),
+	};
+	println!( "{}", item_url );
 
 	// Find target item's preview image url
 	// Find url by class, which will be in an <img>
 	// End url before &, discarding unnecessary query string
-	let image_url = page.str_search(start_index.unwrap(), &vec!["workshopItemPreviewImage", "https"], Include::Start, &vec!["?"], Include::Start);
-	println!( "{}", image_url.unwrap() );
+	let image_url = match page.str_search( &search_range, &vec!["workshopItemPreviewImage", "https"], Include::Include, &vec!["?"], Include::Exclude)
+	{
+		Some ( found ) => found.output,
+		None => bail!("Image URL not found")
+	};
+	println!( "{}", image_url );
 
 	// Find target item's title
 	// The only good signpost for the title is the div, so we find it, and offset the start index to after the div string
-	let title_decoded = decode_html_entities ( page.str_search(start_index.unwrap(), &vec!["<div class=\"workshopItemTitle ellipsis\">"], Include::End, &vec!("</div>"), Include::Start).unwrap() );
+	let title_decoded = decode_html_entities
+	(
+		match page.str_search( &search_range, &vec!["<div class=\"workshopItemTitle ellipsis\">"], Include::Exclude, &vec!("</div>"), Include::Exclude )
+		{
+			Some ( found ) => found.output,
+			None => bail!("Title not found"),
+		}
+	);
 	println!( "{}", title_decoded );
 
 	let image_file_str: String = thread_rng ()
@@ -83,7 +102,7 @@ async fn main() -> Result<()> {
 		.collect ();
 
 	let image_file_name = image_file_str + ".png";
-	match download_from_url ( image_url.unwrap(), &image_file_name ).await
+	match download_from_url ( image_url, &image_file_name ).await
 	{
 		Ok(()) => println! ( "{image_file_name} downloaded" ),
 		Err(e) => println! ( "error downloading {image_file_name}: {e}" ),
@@ -116,7 +135,7 @@ async fn main() -> Result<()> {
 	};
 	let id = session.create_post( &project, &mut post ).await?;
 
-	post.markdown = "[".to_string() + &title_decoded + "]( " + item_url.unwrap() + " )";
+	post.markdown = "[".to_string() + &title_decoded + "]( " + item_url + " )";
 	session.edit_post ( &project, id, &mut post ).await?;
 	
 	match std::fs::remove_file ( &image_file_name )

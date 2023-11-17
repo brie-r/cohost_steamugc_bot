@@ -9,4 +9,7 @@ COHOST_PASSWORD=your_password
 COHOST_PROJECT=page_name_to_post_to (omit the @)
 APP_ID=number (steam app ID, eg 440 for TF2)
 ```
-Note that games with less than 50,000 workshop items are unsupported. I'll happily take PRs that address this.
+Note that
+1. it's limited to the top or most recent 50,000 items.
+2. games with less than 50,000 workshop items are unsupported. I'll happily take PRs that address this.
+3. it's reliant on scraping, so if valve changes the workshop html, it might break.
